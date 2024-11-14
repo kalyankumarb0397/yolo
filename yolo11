@@ -1,11 +1,11 @@
 import cv2
 import numpy as np
 import random
+import streamlit as st
 from ultralytics import YOLO
 
-
 # opening the file in read mode with specified encoding
-with open(r'D:\Data Science\VS CODE\Open ai\yoloenv\coco.txt', "r", encoding='utf-8') as my_file:
+with open(r'/workspaces/yolo11/coco.txt', "r", encoding='utf-8') as my_file:
     data = my_file.read()
 
 # split the text by newline
@@ -19,69 +19,85 @@ for i in range(len(class_list)):
     b = random.randint(0, 255)
     detection_colors.append((b, g, r))
 
-# Load a hypothetical YOLOv11 model
-# Assuming that YOLOv11 uses the same loading syntax as YOLOv8
-model = YOLO("D:\Data Science\VS CODE\Open ai\yoloenv\yolo11n.pt", "11n")  # Replace with actual YOLOv11 model path
+# Load YOLOv11 model
+model = YOLO("/workspaces/yolo11/yolo11n.pt", "11n")  # Replace with actual YOLOv11 model path
 
 # Video capture parameters
 frame_wid = 640
 frame_hyt = 480
 
-cap = cv2.VideoCapture(r"D:\Data Science\VS CODE\Open ai\yoloenv\vid.mp4")
+# Streamlit setup
+st.title("Real-Time Object Detection with YOLO")
+video_file = st.file_uploader("Upload a video", type=["mp4", "avi", "mov"])
 
-if not cap.isOpened():
-    print("Cannot open video")
-    exit()
+if video_file:
+    # Create a temporary file path for the uploaded video
+    video_path = f"temp_video.{video_file.name.split('.')[-1]}"
+    
+    # Save uploaded video to the temporary path
+    with open(video_path, "wb") as f:
+        f.write(video_file.read())
+    
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        st.error("Cannot open video")
+        exit()
 
-while True:
-    ret, frame = cap.read()
+    stframe = st.empty()
 
-    if not ret:
-        print("Can't receive frame (stream end?). Exiting ...")
-        break
+    while True:
+        ret, frame = cap.read()
 
-    # Resize the frame for optimization
-    frame = cv2.resize(frame, (frame_wid, frame_hyt))
+        if not ret:
+            st.warning("Can't receive frame (stream end?). Exiting ...")
+            break
 
-    # Predict on the frame
-    detect_params = model.predict(source=[frame], conf=0.45, save=True)
+        # Resize the frame for optimization
+        frame = cv2.resize(frame, (frame_wid, frame_hyt))
 
-    DP = detect_params[0].numpy()
+        # Predict on the frame
+        detect_params = model.predict(source=[frame], conf=0.45, save=True)
 
-    if len(DP) != 0:
-        for i in range(len(detect_params[0])):
-            boxes = detect_params[0].boxes
-            box = boxes[i]  # returns one box
-            clsID = box.cls.numpy()[0]
-            conf = box.conf.numpy()[0]
-            bb = box.xyxy.numpy()[0]
+        DP = detect_params[0].numpy()
 
-            cv2.rectangle(
-                frame,
-                (int(bb[0]), int(bb[1])),
-                (int(bb[2]), int(bb[3])),
-                detection_colors[int(clsID)],
-                3,
-            )
+        if len(DP) != 0:
+            for i in range(len(detect_params[0])):
+                boxes = detect_params[0].boxes
+                box = boxes[i]  # returns one box
+                clsID = box.cls.numpy()[0]
+                conf = box.conf.numpy()[0]
+                bb = box.xyxy.numpy()[0]
 
-            font = cv2.FONT_HERSHEY_COMPLEX
-            cv2.putText(
-                frame,
-                class_list[int(clsID)] + " " + str(round(conf, 3)) + "%",
-                (int(bb[0]), int(bb[1]) - 10),
-                font,
-                1,
-                (255, 255, 255),
-                2,
-            )
+                cv2.rectangle(
+                    frame,
+                    (int(bb[0]), int(bb[1])),
+                    (int(bb[2]), int(bb[3])),
+                    detection_colors[int(clsID)],
+                    3,
+                )
 
-    # Display the resulting frame
-    cv2.imshow("Object Detection", frame)
+                font = cv2.FONT_HERSHEY_COMPLEX
+                cv2.putText(
+                    frame,
+                    class_list[int(clsID)] + " " + str(round(conf, 3)) + "%",
+                    (int(bb[0]), int(bb[1]) - 10),
+                    font,
+                    1,
+                    (255, 255, 255),
+                    2,
+                )
 
-    # Terminate run when "Q" pressed
-    if cv2.waitKey(1) == ord("q"):
-        break
+        # Convert frame to RGB before displaying in Streamlit
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-# When everything done, release the capture
-cap.release()
-cv2.destroyAllWindows()
+        # Display the frame in Streamlit
+        stframe.image(frame_rgb, channels="RGB", use_column_width=True)
+
+        # Optional: stop if video ends
+        if cap.get(cv2.CAP_PROP_POS_FRAMES) == cap.get(cv2.CAP_PROP_FRAME_COUNT):
+            st.success("Video processed successfully")
+            break
+
+    cap.release()
+else:
+    st.info("Upload a video to start object detection")
